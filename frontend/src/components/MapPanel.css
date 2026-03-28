@@ -1,0 +1,167 @@
+.map-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+.map-search {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  background: rgba(18, 18, 26, 0.92);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  backdrop-filter: blur(12px);
+  gap: 8px;
+}
+
+.search-icon {
+  font-size: 18px;
+  color: var(--text3);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  padding: 12px 0;
+}
+
+.search-input::placeholder { color: var(--text3); }
+
+.search-clear {
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px;
+  transition: color var(--transition);
+}
+.search-clear:hover { color: var(--text); }
+
+.search-dropdown {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  right: 16px;
+  z-index: 30;
+  background: rgba(18, 18, 26, 0.97);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+  text-align: left;
+}
+
+.search-result:last-child { border-bottom: none; }
+.search-result:hover { background: var(--bg3); }
+
+.result-name {
+  font-size: 14px;
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+.result-borough {
+  font-size: 12px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+.search-empty {
+  padding: 16px;
+  color: var(--text3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.map-svg-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.map-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.map-dot-group { transition: all 0.15s; }
+
+.map-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  gap: 16px;
+  background: rgba(18,18,26,0.8);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  backdrop-filter: blur(8px);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--font-mono);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text3);
+  border: 2px solid var(--bg);
+}
+
+.legend-dot.selected {
+  background: var(--accent);
+}
+
+.map-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.map-label.manhattan { top: 38%; left: 42%; }
+.map-label.brooklyn { bottom: 28%; left: 38%; }
+.map-label.bronx { top: 12%; left: 48%; }
+.map-label.queens { bottom: 35%; right: 20%; }
