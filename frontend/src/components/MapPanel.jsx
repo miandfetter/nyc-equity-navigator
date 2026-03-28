@@ -61,9 +61,9 @@ export default function MapPanel({ onNeighborhoodSelect, selectedNeighborhood })
       })
 
       // Stamen Toner Lite — clean, illustrated style, free, no API key
-      L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; Stadia Maps &copy; Stamen Design &copy; OpenStreetMap',
-        maxZoom: 18,
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19,
       }).addTo(map)
 
       leafletMap.current = map
