@@ -17,10 +17,8 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-NYC_DATA_URL = (
-    "https://data.cityofnewyork.us/resource/r3dx-pew9.json"
-    "?$limit=2000"
-)
+NYC_DATA_URL = "https://data.cityofnewyork.us/resource/r3dx-pew9.json"
+
 
 genai.configure(api_key=GEMINI_API_KEY)
 
@@ -44,34 +42,37 @@ app.add_middleware(
 
 async def fetch_neighborhood_data(neighborhood: str) -> list[dict]:
     """Fetch NFH data for a given neighborhood from NYC Open Data (grounding)."""
-    params = {
-        "$where": f"upper(neighborhood) like '%{neighborhood.upper()}%'",
-        "$limit": 50,
-    }
+    url = f"{NYC_DATA_URL}?$q={neighborhood.replace(' ', '+')}&$limit=50"
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(NYC_DATA_URL, params=params)
+        r = await client.get(url)
         r.raise_for_status()
         return r.json()
 
 
 async def fetch_comparison_data() -> list[dict]:
     """Fetch city-wide sample for comparison baselines."""
+    url = f"{NYC_DATA_URL}?$limit=500"
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(NYC_DATA_URL + "&$limit=500")
+        r = await client.get(url)
         r.raise_for_status()
         return r.json()
 
 
 def compute_city_averages(rows: list[dict]) -> dict:
     def avg(key):
-        vals = [float(r[key]) for r in rows if r.get(key)]
+        vals = []
+        for r in rows:
+            try:
+                vals.append(float(r[key]))
+            except (ValueError, TypeError, KeyError):
+                pass
         return round(sum(vals) / len(vals), 2) if vals else 0
     return {
-        "avg_nfh_index": avg("nfh_index"),
-        "avg_bank_branch_rate": avg("bank_branch_rate"),
-        "avg_check_casher_rate": avg("check_casher_rate"),
-        "avg_pawn_shop_rate": avg("pawn_shop_rate"),
-        "avg_median_income": avg("median_household_income"),
+        "avg_nfh_index": avg("indexscore"),
+        "avg_median_income": avg("median_income"),
+        "avg_poverty_rate": avg("nyc_poverty_rate"),
+        "avg_perc_black": avg("perc_black"),
+        "avg_perc_hispanic": avg("perc_hispanic"),
         "total_rows": len(rows),
     }
 
@@ -83,12 +84,12 @@ async def data_analyst_agent(neighborhood_rows: list[dict], city_avgs: dict) -> 
     Calls Gemini with structured output prompt.
     Returns chart-ready JSON: bar chart, percentile, key metrics.
     """
-    model = genai.GenerativeModel("gemini-2.0-flash-exp")
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     sample = neighborhood_rows[:10]
     prompt = f"""
-You are a data analyst. Given the following NYC Neighborhood Financial Health (NFH) data rows
-for a neighborhood and the city-wide averages, return ONLY valid JSON — no markdown, no explanation.
+You are a data analyst. Given the following NYC Neighborhood Financial Health data rows
+and city-wide averages, return ONLY valid JSON — no markdown, no explanation.
 
 NFH DATA ROWS (sample):
 {json.dumps(sample, indent=2)}
@@ -96,23 +97,27 @@ NFH DATA ROWS (sample):
 CITY-WIDE AVERAGES:
 {json.dumps(city_avgs, indent=2)}
 
+The data fields are: indexscore (NFH index), median_income, nyc_poverty_rate,
+ind1outcome (homeownership rate), ind2outcome (neighborhood tenure rate),
+perc_black, perc_hispanic, perc_white, neighborhoods (neighborhood name).
+
 Return JSON in exactly this shape:
 {{
-  "neighborhood_name": "<name from data>",
-  "nfh_index": <float>,
-  "city_avg_nfh": <float>,
-  "percentile": <int 0-100, estimated>,
+  "neighborhood_name": "<name from neighborhoods field>",
+  "nfh_index": <float from indexscore>,
+  "city_avg_nfh": <float from city averages avg_nfh_index>,
+  "percentile": <int 0-100, estimated based on scorerank field>,
   "metrics": [
     {{"label": "NFH Index", "neighborhood": <float>, "city_avg": <float>}},
-    {{"label": "Bank Branch Rate", "neighborhood": <float>, "city_avg": <float>}},
-    {{"label": "Check Casher Rate", "neighborhood": <float>, "city_avg": <float>}},
-    {{"label": "Pawn Shop Rate", "neighborhood": <float>, "city_avg": <float>}},
-    {{"label": "Median Income ($k)", "neighborhood": <float>, "city_avg": <float>}}
+    {{"label": "Median Income ($k)", "neighborhood": <float divided by 1000>, "city_avg": <float divided by 1000>}},
+    {{"label": "Poverty Rate (%)", "neighborhood": <float * 100>, "city_avg": <float * 100>}},
+    {{"label": "Homeownership (%)", "neighborhood": <float * 100>, "city_avg": <float * 100>}},
+    {{"label": "Long-term Residents (%)", "neighborhood": <float * 100>, "city_avg": <float * 100>}}
   ],
   "summary_stats": {{
     "total_locations_analyzed": <int>,
-    "data_year": "<year if present, else 'Latest'>",
-    "borough": "<borough if present>"
+    "data_year": "<year_published field>",
+    "borough": "<borough field>"
   }}
 }}
 """
@@ -120,7 +125,20 @@ Return JSON in exactly this shape:
         model.generate_content, prompt, safety_settings=SAFETY
     )
     text = response.text.strip().lstrip("```json").lstrip("```").rstrip("```")
-    return json.loads(text)
+    print("DATA AGENT RAW RESPONSE:", text)  # debug
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        print("JSON PARSE ERROR:", e)
+        # Return safe fallback so stream doesn't crash
+        return {
+            "neighborhood_name": neighborhood,
+            "nfh_index": 0,
+            "city_avg_nfh": 0,
+            "percentile": 50,
+            "metrics": [],
+            "summary_stats": {"total_locations_analyzed": 0, "data_year": "Latest", "borough": ""}
+        }
 
 
 # ── Agent 2: Narrative Writer ─────────────────────────────────────────────────
@@ -134,7 +152,7 @@ async def narrative_agent_stream(
     Streams a policy-grade narrative analysis token by token.
     Yields SSE chunks of type 'narrative'.
     """
-    model = genai.GenerativeModel("gemini-2.0-flash-exp")
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     sample = neighborhood_rows[:5]
     prompt = f"""
@@ -234,6 +252,11 @@ async def orchestrate_stream(neighborhood: str) -> AsyncGenerator[str, None]:
                 fetch_neighborhood_data(neighborhood),
                 fetch_comparison_data(),
             )
+            if city_rows:
+                print("SAMPLE ROW KEYS:", list(city_rows[0].keys()))
+            if neighborhood_rows:
+                print("NEIGHBORHOOD ROW KEYS:", list(neighborhood_rows[0].keys()))
+                print("NEIGHBORHOOD ROW:", neighborhood_rows[0])
         except Exception as e:
             yield sse({"type": "error", "message": f"NYC Open Data fetch failed: {str(e)}"})
             return
@@ -300,11 +323,24 @@ async def list_neighborhoods():
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(
             "https://data.cityofnewyork.us/resource/r3dx-pew9.json"
-            "?$select=distinct%20neighborhood,borough,latitude,longitude"
-            "&$limit=300"
+            "?$limit=300"
         )
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        # Deduplicate by neighborhood name
+        seen = set()
+        unique = []
+        for row in data:
+            name = row.get("neighborhood")
+            if name and name not in seen:
+                seen.add(name)
+                unique.append({
+                    "neighborhood": name,
+                    "borough": row.get("borough", ""),
+                    "latitude": row.get("latitude", ""),
+                    "longitude": row.get("longitude", ""),
+                })
+        return unique
 
 
 @app.get("/health")

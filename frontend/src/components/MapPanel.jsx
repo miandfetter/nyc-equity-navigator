@@ -1,72 +1,144 @@
 import { useState, useEffect, useRef } from 'react'
 import './MapPanel.css'
 
-// NYC neighborhood coordinates (hardcoded fallback + augmented from API)
-const DEFAULT_NEIGHBORHOODS = [
-  { neighborhood: 'Brownsville', borough: 'Brooklyn', latitude: '40.6628', longitude: '-73.9093' },
-  { neighborhood: 'Upper East Side', borough: 'Manhattan', latitude: '40.7736', longitude: '-73.9566' },
-  { neighborhood: 'Mott Haven', borough: 'Bronx', latitude: '40.8101', longitude: '-73.9249' },
-  { neighborhood: 'Tribeca', borough: 'Manhattan', latitude: '40.7163', longitude: '-74.0086' },
-  { neighborhood: 'East New York', borough: 'Brooklyn', latitude: '40.6659', longitude: '-73.8785' },
-  { neighborhood: 'Astoria', borough: 'Queens', latitude: '40.7721', longitude: '-73.9301' },
-  { neighborhood: 'Hunts Point', borough: 'Bronx', latitude: '40.8157', longitude: '-73.8897' },
-  { neighborhood: 'Park Slope', borough: 'Brooklyn', latitude: '40.6681', longitude: '-73.9800' },
-  { neighborhood: 'Harlem', borough: 'Manhattan', latitude: '40.8116', longitude: '-73.9465' },
-  { neighborhood: 'Flushing', borough: 'Queens', latitude: '40.7675', longitude: '-73.8330' },
-  { neighborhood: 'Jamaica', borough: 'Queens', latitude: '40.6912', longitude: '-73.8065' },
-  { neighborhood: 'Bedford-Stuyvesant', borough: 'Brooklyn', latitude: '40.6872', longitude: '-73.9418' },
-  { neighborhood: 'Crown Heights', borough: 'Brooklyn', latitude: '40.6694', longitude: '-73.9422' },
-  { neighborhood: 'Washington Heights', borough: 'Manhattan', latitude: '40.8448', longitude: '-73.9393' },
-  { neighborhood: 'Flatbush', borough: 'Brooklyn', latitude: '40.6414', longitude: '-73.9610' },
-  { neighborhood: 'Soundview', borough: 'Bronx', latitude: '40.8210', longitude: '-73.8711' },
-  { neighborhood: 'Forest Hills', borough: 'Queens', latitude: '40.7184', longitude: '-73.8456' },
-  { neighborhood: 'Staten Island', borough: 'Staten Island', latitude: '40.5795', longitude: '-74.1502' },
+const NEIGHBORHOODS = [
+  { neighborhood: 'Brownsville', borough: 'Brooklyn', lat: 40.6628, lng: -73.9093 },
+  { neighborhood: 'Upper East Side', borough: 'Manhattan', lat: 40.7736, lng: -73.9566 },
+  { neighborhood: 'Mott Haven', borough: 'Bronx', lat: 40.8101, lng: -73.9249 },
+  { neighborhood: 'Tribeca', borough: 'Manhattan', lat: 40.7163, lng: -74.0086 },
+  { neighborhood: 'East New York', borough: 'Brooklyn', lat: 40.6659, lng: -73.8785 },
+  { neighborhood: 'Astoria', borough: 'Queens', lat: 40.7721, lng: -73.9301 },
+  { neighborhood: 'Hunts Point', borough: 'Bronx', lat: 40.8157, lng: -73.8897 },
+  { neighborhood: 'Park Slope', borough: 'Brooklyn', lat: 40.6681, lng: -73.9800 },
+  { neighborhood: 'Harlem', borough: 'Manhattan', lat: 40.8116, lng: -73.9465 },
+  { neighborhood: 'Flushing', borough: 'Queens', lat: 40.7675, lng: -73.8330 },
+  { neighborhood: 'Jamaica', borough: 'Queens', lat: 40.6912, lng: -73.8065 },
+  { neighborhood: 'Bedford-Stuyvesant', borough: 'Brooklyn', lat: 40.6872, lng: -73.9418 },
+  { neighborhood: 'Crown Heights', borough: 'Brooklyn', lat: 40.6694, lng: -73.9422 },
+  { neighborhood: 'Washington Heights', borough: 'Manhattan', lat: 40.8448, lng: -73.9393 },
+  { neighborhood: 'Flatbush', borough: 'Brooklyn', lat: 40.6414, lng: -73.9610 },
+  { neighborhood: 'Soundview', borough: 'Bronx', lat: 40.8210, lng: -73.8711 },
+  { neighborhood: 'Forest Hills', borough: 'Queens', lat: 40.7184, lng: -73.8456 },
+  { neighborhood: 'Staten Island', borough: 'Staten Island', lat: 40.5795, lng: -74.1502 },
 ]
 
-// NYC bounding box for projection
-const NYC_BOUNDS = {
-  minLat: 40.477,
-  maxLat: 40.918,
-  minLng: -74.260,
-  maxLng: -73.700,
-}
-
-function project(lat, lng, width, height) {
-  const x = ((parseFloat(lng) - NYC_BOUNDS.minLng) / (NYC_BOUNDS.maxLng - NYC_BOUNDS.minLng)) * width
-  const y = height - ((parseFloat(lat) - NYC_BOUNDS.minLat) / (NYC_BOUNDS.maxLat - NYC_BOUNDS.minLat)) * height
-  return { x, y }
-}
-
-export default function MapPanel({ onNeighborhoodSelect, selectedNeighborhood, apiBase }) {
-  const [neighborhoods, setNeighborhoods] = useState(DEFAULT_NEIGHBORHOODS)
+export default function MapPanel({ onNeighborhoodSelect, selectedNeighborhood }) {
   const [search, setSearch] = useState('')
-  const [hoveredN, setHoveredN] = useState(null)
-  const svgRef = useRef(null)
-  const [dims, setDims] = useState({ w: 600, h: 500 })
+  const mapRef = useRef(null)
+  const leafletMap = useRef(null)
+  const markersRef = useRef({})
 
   useEffect(() => {
-    // Try to fetch from API, fall back to defaults silently
-    fetch(`${apiBase}/neighborhoods`)
-      .then(r => r.json())
-      .then(data => {
-        const valid = data.filter(n => n.latitude && n.longitude && n.neighborhood)
-        if (valid.length > 0) setNeighborhoods(valid)
-      })
-      .catch(() => {}) // silent fallback
-  }, [apiBase])
-
-  useEffect(() => {
-    const obs = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect
-      setDims({ w: width, h: height })
-    })
-    if (svgRef.current?.parentElement) {
-      obs.observe(svgRef.current.parentElement)
+    // Dynamically load Leaflet CSS + JS
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link')
+      link.id = 'leaflet-css'
+      link.rel = 'stylesheet'
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+      document.head.appendChild(link)
     }
-    return () => obs.disconnect()
+
+    const loadLeaflet = async () => {
+      if (!window.L) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      if (leafletMap.current || !mapRef.current) return
+
+      const L = window.L
+
+      // Init map centered on NYC
+      const map = L.map(mapRef.current, {
+        center: [40.7128, -74.0060],
+        zoom: 11,
+        zoomControl: true,
+      })
+
+      // Stamen Toner Lite — clean, illustrated style, free, no API key
+      L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; Stadia Maps &copy; Stamen Design &copy; OpenStreetMap',
+        maxZoom: 18,
+      }).addTo(map)
+
+      leafletMap.current = map
+
+      // Add markers
+      NEIGHBORHOODS.forEach(n => {
+        const isSelected = n.neighborhood === selectedNeighborhood
+
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            width: ${isSelected ? 16 : 12}px;
+            height: ${isSelected ? 16 : 12}px;
+            background: ${isSelected ? '#E8874A' : '#B5680A'};
+            border: 2px solid ${isSelected ? '#fff' : '#F5C842'};
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.15s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          "></div>`,
+          iconSize: [isSelected ? 16 : 12, isSelected ? 16 : 12],
+          iconAnchor: [isSelected ? 8 : 6, isSelected ? 8 : 6],
+        })
+
+        const marker = L.marker([n.lat, n.lng], { icon })
+          .addTo(map)
+          .bindTooltip(n.neighborhood, {
+            permanent: false,
+            direction: 'top',
+            className: 'neighborhood-tooltip',
+            offset: [0, -8],
+          })
+          .on('click', () => onNeighborhoodSelect(n.neighborhood))
+
+        markersRef.current[n.neighborhood] = { marker, data: n }
+      })
+    }
+
+    loadLeaflet()
+
+    return () => {
+      if (leafletMap.current) {
+        leafletMap.current.remove()
+        leafletMap.current = null
+      }
+    }
   }, [])
 
-  // Handle suggestion events from App
+  // Update marker styles when selection changes
+  useEffect(() => {
+    if (!window.L || !leafletMap.current) return
+    const L = window.L
+
+    Object.entries(markersRef.current).forEach(([name, { marker }]) => {
+      const isSelected = name === selectedNeighborhood
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width: ${isSelected ? 16 : 12}px;
+          height: ${isSelected ? 16 : 12}px;
+          background: ${isSelected ? '#E8874A' : '#B5680A'};
+          border: 2px solid ${isSelected ? '#fff' : '#F5C842'};
+          border-radius: 50%;
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          ${isSelected ? 'box-shadow: 0 0 0 4px rgba(232,135,74,0.3), 0 2px 6px rgba(0,0,0,0.3);' : ''}
+        "></div>`,
+        iconSize: [isSelected ? 16 : 12, isSelected ? 16 : 12],
+        iconAnchor: [isSelected ? 8 : 6, isSelected ? 8 : 6],
+      })
+      marker.setIcon(icon)
+    })
+  }, [selectedNeighborhood])
+
+  // Handle suggestion events
   useEffect(() => {
     const handler = (e) => {
       setSearch(e.detail)
@@ -77,20 +149,24 @@ export default function MapPanel({ onNeighborhoodSelect, selectedNeighborhood, a
   }, [onNeighborhoodSelect])
 
   const filtered = search.length > 1
-    ? neighborhoods.filter(n =>
-        n.neighborhood?.toLowerCase().includes(search.toLowerCase()) ||
-        n.borough?.toLowerCase().includes(search.toLowerCase())
+    ? NEIGHBORHOODS.filter(n =>
+        n.neighborhood.toLowerCase().includes(search.toLowerCase()) ||
+        n.borough.toLowerCase().includes(search.toLowerCase())
       )
-    : neighborhoods
+    : []
 
   const handleSelect = (name) => {
     setSearch('')
     onNeighborhoodSelect(name)
+    // Pan map to selected neighborhood
+    const entry = markersRef.current[name]
+    if (entry && leafletMap.current) {
+      leafletMap.current.setView([entry.data.lat, entry.data.lng], 13, { animate: true })
+    }
   }
 
   return (
     <div className="map-panel">
-      {/* Search bar */}
       <div className="map-search">
         <span className="search-icon">⌕</span>
         <input
@@ -100,146 +176,37 @@ export default function MapPanel({ onNeighborhoodSelect, selectedNeighborhood, a
           onChange={e => setSearch(e.target.value)}
           className="search-input"
         />
-        {search && (
-          <button className="search-clear" onClick={() => setSearch('')}>✕</button>
-        )}
+        {search && <button className="search-clear" onClick={() => setSearch('')}>✕</button>}
       </div>
 
-      {/* Autocomplete dropdown */}
       {search.length > 1 && (
         <div className="search-dropdown">
           {filtered.slice(0, 8).map(n => (
-            <button
-              key={n.neighborhood}
-              className="search-result"
-              onClick={() => handleSelect(n.neighborhood)}
-            >
+            <button key={n.neighborhood} className="search-result" onClick={() => handleSelect(n.neighborhood)}>
               <span className="result-name">{n.neighborhood}</span>
               <span className="result-borough">{n.borough}</span>
             </button>
           ))}
-          {filtered.length === 0 && (
-            <div className="search-empty">No results — try a different name</div>
-          )}
+          {filtered.length === 0 && <div className="search-empty">No results</div>}
         </div>
       )}
 
-      {/* SVG Map */}
-      <div className="map-svg-container">
-        <svg
-          ref={svgRef}
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${dims.w} ${dims.h}`}
-          className="map-svg"
-        >
-          {/* NYC borough outlines (simplified) */}
-          <NycOutlines w={dims.w} h={dims.h} />
+      <div ref={mapRef} style={{ flex: 1, width: '100%', minHeight: 0 }} />
 
-          {/* Neighborhood dots */}
-          {DEFAULT_NEIGHBORHOODS.map(n => {
-            const { x, y } = project(n.latitude, n.longitude, dims.w, dims.h)
-            const isSelected = n.neighborhood === selectedNeighborhood
-            const isHovered = n.neighborhood === hoveredN
-            return (
-              <g key={n.neighborhood}
-                className="map-dot-group"
-                onClick={() => handleSelect(n.neighborhood)}
-                onMouseEnter={() => setHoveredN(n.neighborhood)}
-                onMouseLeave={() => setHoveredN(null)}
-                style={{ cursor: 'pointer' }}
-              >
-                {isSelected && (
-                  <circle cx={x} cy={y} r={16} fill="var(--accent)" opacity={0.15} />
-                )}
-                <circle
-                  cx={x} cy={y}
-                  r={isSelected ? 7 : isHovered ? 6 : 5}
-                  fill={isSelected ? 'var(--accent)' : isHovered ? 'var(--text)' : 'var(--text3)'}
-                  stroke={isSelected ? 'var(--accent)' : 'var(--bg)'}
-                  strokeWidth={2}
-                  style={{ transition: 'all 0.15s ease' }}
-                />
-                {(isSelected || isHovered) && (
-                  <text
-                    x={x + 10} y={y + 4}
-                    fill={isSelected ? 'var(--accent)' : 'var(--text)'}
-                    fontSize="11"
-                    fontFamily="var(--font-body)"
-                    fontWeight={isSelected ? '600' : '400'}
-                    style={{ pointerEvents: 'none', userSelect: 'none' }}
-                  >
-                    {n.neighborhood}
-                  </text>
-                )}
-              </g>
-            )
-          })}
-        </svg>
-
-        {/* Map legend */}
-        <div className="map-legend">
-          <div className="legend-item">
-            <span className="legend-dot selected"></span>
-            <span>Selected</span>
-          </div>
-          <div className="legend-item">
-            <span className="legend-dot"></span>
-            <span>Neighborhood</span>
-          </div>
-        </div>
-
-        {/* Borough labels */}
-        <div className="map-label manhattan">Manhattan</div>
-        <div className="map-label brooklyn">Brooklyn</div>
-        <div className="map-label bronx">Bronx</div>
-        <div className="map-label queens">Queens</div>
-      </div>
+      <style>{`
+        .neighborhood-tooltip {
+          background: rgba(18,18,26,0.92) !important;
+          border: 1px solid rgba(255,255,255,0.1) !important;
+          border-radius: 6px !important;
+          color: #e8e6df !important;
+          font-family: 'Syne', sans-serif !important;
+          font-size: 12px !important;
+          padding: 4px 10px !important;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        }
+        .neighborhood-tooltip::before { display: none !important; }
+        .leaflet-control-attribution { font-size: 9px !important; }
+      `}</style>
     </div>
-  )
-}
-
-function NycOutlines({ w, h }) {
-  // Simplified NYC borough boundary paths (projected)
-  const proj = (lat, lng) => project(lat, lng, w, h)
-
-  // Rough Manhattan outline
-  const manhattanPoints = [
-    [40.7009, -74.0159], [40.7484, -74.0025], [40.8003, -73.9580],
-    [40.8510, -73.9336], [40.8816, -73.9176], [40.8781, -73.9073],
-    [40.8316, -73.9326], [40.7685, -73.9846], [40.7009, -74.0159],
-  ].map(([lat, lng]) => proj(lat, lng))
-
-  const toPath = (points) =>
-    points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') + ' Z'
-
-  return (
-    <g className="borough-outlines">
-      <path
-        d={toPath(manhattanPoints)}
-        fill="rgba(255,255,255,0.02)"
-        stroke="rgba(255,255,255,0.06)"
-        strokeWidth="1"
-      />
-      {/* Grid overlay for aesthetics */}
-      {Array.from({ length: 8 }, (_, i) => (
-        <line
-          key={`v${i}`}
-          x1={w * (i + 1) / 9} y1={0}
-          x2={w * (i + 1) / 9} y2={h}
-          stroke="rgba(255,255,255,0.02)"
-          strokeWidth="1"
-        />
-      ))}
-      {Array.from({ length: 6 }, (_, i) => (
-        <line
-          key={`h${i}`}
-          x1={0} y1={h * (i + 1) / 7}
-          x2={w} y2={h * (i + 1) / 7}
-          stroke="rgba(255,255,255,0.02)"
-          strokeWidth="1"
-        />
-      ))}
-    </g>
   )
 }

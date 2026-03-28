@@ -1,14 +1,5 @@
 import { useEffect, useRef } from 'react'
-import {
-  Chart,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  Tooltip,
-  Legend,
-} from 'chart.js'
-
-Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
+import Chart from 'chart.js/auto'
 
 export default function NFHChart({ metrics }) {
   const canvasRef = useRef(null)
@@ -19,6 +10,7 @@ export default function NFHChart({ metrics }) {
 
     if (chartRef.current) {
       chartRef.current.destroy()
+      chartRef.current = null
     }
 
     const ctx = canvasRef.current.getContext('2d')
@@ -49,10 +41,7 @@ export default function NFHChart({ metrics }) {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: {
-          duration: 800,
-          easing: 'easeOutQuart',
-        },
+        animation: { duration: 800, easing: 'easeOutQuart' },
         plugins: {
           legend: {
             position: 'bottom',
@@ -70,8 +59,6 @@ export default function NFHChart({ metrics }) {
             borderWidth: 1,
             titleColor: '#e8e6df',
             bodyColor: '#8a8880',
-            titleFont: { size: 12, family: "'Syne', sans-serif" },
-            bodyFont: { size: 11, family: "'DM Mono', monospace" },
             padding: 12,
             callbacks: {
               label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2)}`,
@@ -81,26 +68,24 @@ export default function NFHChart({ metrics }) {
         scales: {
           x: {
             grid: { color: 'rgba(255,255,255,0.04)' },
-            ticks: {
-              color: '#5a5856',
-              font: { size: 10, family: "'DM Mono', monospace" },
-              maxRotation: 30,
-            },
+            ticks: { color: '#5a5856', font: { size: 10, family: "'DM Mono', monospace" }, maxRotation: 30 },
             border: { color: 'rgba(255,255,255,0.06)' },
           },
           y: {
             grid: { color: 'rgba(255,255,255,0.04)' },
-            ticks: {
-              color: '#5a5856',
-              font: { size: 10, family: "'DM Mono', monospace" },
-            },
+            ticks: { color: '#5a5856', font: { size: 10, family: "'DM Mono', monospace" } },
             border: { color: 'rgba(255,255,255,0.06)' },
           },
         },
       },
     })
 
-    return () => chartRef.current?.destroy()
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.destroy()
+        chartRef.current = null
+      }
+    }
   }, [metrics])
 
   return (
